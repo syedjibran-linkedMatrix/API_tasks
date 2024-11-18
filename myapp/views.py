@@ -13,6 +13,8 @@ from .serializers import (
     ProjectSerializer, TaskSerializer
 )
 from rest_framework.exceptions import PermissionDenied
+from django.contrib.auth import get_user_model
+from django.db.models import Q
 
 
 
@@ -65,14 +67,48 @@ class ProjectViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated, IsProjectManagerOrReadOnly]
 
     def get_queryset(self):
-        return Project.objects.all()
+        return Project.objects.filter(
+            Q(project_members=self.request.user) | 
+            Q(manager=self.request.user)
+        ).distinct()
 
     def perform_create(self, serializer):
         serializer.save(manager=self.request.user)
+    
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
         return context
+    
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated,IsProjectManagerOrReadOnly])
+    def add_members(self, request, pk=None):
+        project = self.get_object()
+        if project.manager != request.user and not request.user.is_staff:
+            return Response(
+                {'detail': 'Only project manager or admin can add members'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        user_ids = request.data.get('user_ids', [])
+        
+        if not user_ids:
+            return Response(
+                {'detail': 'No user IDs provided'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        User = get_user_model()
+        try:
+            users = User.objects.filter(id__in=user_ids)
+            project.project_members.add(*users)
+            return Response(
+                {'detail': 'Members added successfully'},
+                status=status.HTTP_200_OK
+            )
+        except Exception as e:
+            return Response(
+                {'detail': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 
 class TaskViewSet(viewsets.ModelViewSet):

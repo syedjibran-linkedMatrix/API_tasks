@@ -3,7 +3,7 @@ from .models import User, Project, Task
 
 @admin.register(User)
 class UserAdmin(admin.ModelAdmin):
-    pass
+    list_display = ('id', 'username', 'email') 
 
 @admin.register(Project)
 class ProjectAdmin(admin.ModelAdmin):

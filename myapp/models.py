@@ -15,9 +15,13 @@ class Project(models.Model):
         on_delete=models.CASCADE,
         related_name='managed_projects'
     )
-    #project users
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    project_members = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        related_name='project_members'
+    )
 
     def __str__(self):
         return self.title

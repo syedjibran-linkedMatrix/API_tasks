@@ -53,11 +53,14 @@ class ProjectSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Project
-        fields = ('id', 'title', 'description', 'manager', 'created_at', 'updated_at', 'is_manager', 'tasks')
+        fields = ('id', 'title', 'description', 'manager', 'created_at', 'updated_at', 'is_manager', 'project_members', 'tasks')
 
     def get_is_manager(self, obj):
         request = self.context.get('request')
         if request and hasattr(request, 'user'):
             return obj.manager == request.user
         return False
+    
+
+
 
