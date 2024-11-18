@@ -4,6 +4,8 @@ from . import views
 
 router = DefaultRouter()
 router.register(r'projects', views.ProjectViewSet)
+router.register(r'tasks', views.TaskViewSet, basename='task')
+
 
 urlpatterns = [
     path('register/', views.register_user, name='register'),

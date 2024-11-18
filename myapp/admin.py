@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import User, Project
+from .models import User, Project, Task
 
 @admin.register(User)
 class UserAdmin(admin.ModelAdmin):
@@ -7,4 +7,8 @@ class UserAdmin(admin.ModelAdmin):
 
 @admin.register(Project)
 class ProjectAdmin(admin.ModelAdmin):
+    list_display = ('id', 'title', 'manager', 'created_at') 
+
+@admin.register(Task)
+class TaskAdmin(admin.ModelAdmin):
     pass
