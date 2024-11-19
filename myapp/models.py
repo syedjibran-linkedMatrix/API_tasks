@@ -3,9 +3,23 @@ from django.contrib.auth.models import AbstractUser
 from django.conf import settings
 
 class User(AbstractUser):
+    ROLE_CHOICES = [
+        ('project_manager', 'Project Manager'),
+        ('developer', 'Developer'),
+        ('sqa', 'Software Quality Assurance')
+    ]
+
     email = models.EmailField(unique=True)
+    role = models.CharField(
+        max_length=20, 
+        choices=ROLE_CHOICES, 
+        default='developer'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.username} - {self.get_role_display()}"
 
 class Project(models.Model):
     title = models.CharField(max_length=200)

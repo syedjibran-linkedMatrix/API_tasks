@@ -14,6 +14,8 @@ from .serializers import (
 from rest_framework.exceptions import PermissionDenied
 from django.contrib.auth import get_user_model
 from django.db.models import Q
+from rest_framework import serializers
+
 
 
 
@@ -55,16 +57,23 @@ def login_user(request):
         )
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
 def logout_user(request):
     request.user.auth_token.delete()
     return Response(status=status.HTTP_200_OK)
 
+
 class ProjectViewSet(viewsets.ModelViewSet):
     queryset = Project.objects.all()
     serializer_class = ProjectSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
 
     def get_queryset(self):
         return Project.objects.filter(
@@ -73,6 +82,9 @@ class ProjectViewSet(viewsets.ModelViewSet):
         ).distinct()
 
     def perform_create(self, serializer):
+        if self.request.user.role != 'project_manager':
+            raise serializers.ValidationError("Only project managers can create projects")
+        
         serializer.save(manager=self.request.user)
 
     def update(self, request, *args, **kwargs):
@@ -99,7 +111,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
             status=status.HTTP_204_NO_CONTENT
         )
 
-    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    @action(detail=True, methods=['post'])
+    #http://localhost:8000/api/projects/1/add_members/
     def add_members(self, request, pk=None):
         project = self.get_object()
         if project.manager != request.user and not request.user.is_staff:
@@ -132,6 +145,56 @@ class ProjectViewSet(viewsets.ModelViewSet):
         project.project_members.add(*existing_users)
         return Response(
             {'detail': 'Members added successfully'},
+            status=status.HTTP_200_OK
+        )
+    
+    @action(detail=True, methods=['post'])
+    #http://localhost:8000/api/projects/12/remove_members/
+    def remove_members(self, request, pk=None):
+        project = self.get_object()
+        
+        if project.manager != request.user and not request.user.is_staff:
+            return Response(
+                {'detail': 'Only project manager or admin can remove members'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        user_ids = request.data.get('user_ids', [])
+        
+        if not user_ids:
+            return Response(
+                {'detail': 'No user IDs provided'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        User = get_user_model()
+        existing_users = User.objects.filter(id__in=user_ids)
+
+        non_existent_ids = set(user_ids) - set(existing_users.values_list('id', flat=True))
+        if non_existent_ids:
+            return Response(
+                {
+                    'detail': 'Some user IDs do not exist',
+                    'non_existent_user_ids': list(non_existent_ids)
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        non_members = existing_users.exclude(id__in=project.project_members.values_list('id', flat=True))
+        if non_members.exists():
+            return Response(
+                {
+                    'detail': 'Some users are not members of this project',
+                    'non_project_member_ids': list(non_members.values_list('id', flat=True))
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        project_members_to_remove = existing_users.filter(id__in=project.project_members.values_list('id', flat=True))
+        project.project_members.remove(*project_members_to_remove)
+        
+        return Response(
+            {'detail': 'Members removed successfully'},
             status=status.HTTP_200_OK
         )
     
