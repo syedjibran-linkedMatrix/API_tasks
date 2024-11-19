@@ -40,26 +40,14 @@ class TaskSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ('project_title',)
 
-    def get_is_manager(self, obj):
-        request = self.context.get('request')
-        if request and hasattr(request, 'user'):
-            return obj.manager == request.user
-        return False
 
 class ProjectSerializer(serializers.ModelSerializer):
     manager = serializers.ReadOnlyField(source='manager.username')
-    is_manager = serializers.SerializerMethodField()
     tasks = TaskSerializer(many=True, read_only=True)
     
     class Meta:
         model = Project
-        fields = ('id', 'title', 'description', 'manager', 'created_at', 'updated_at', 'is_manager', 'project_members', 'tasks')
-
-    def get_is_manager(self, obj):
-        request = self.context.get('request')
-        if request and hasattr(request, 'user'):
-            return obj.manager == request.user
-        return False
+        fields = ('id', 'title', 'description', 'manager', 'created_at', 'updated_at', 'project_members', 'tasks')
     
 
 

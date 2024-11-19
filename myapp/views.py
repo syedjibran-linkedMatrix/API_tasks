@@ -6,7 +6,6 @@ from rest_framework.authtoken.models import Token
 from django.contrib.auth import authenticate
 from .models import Project, Task
 from .serializers import UserRegistrationSerializer, UserLoginSerializer, ProjectSerializer, TaskSerializer
-from .custom_permissions import IsProjectManagerOrReadOnly
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from .serializers import (
@@ -64,7 +63,7 @@ def logout_user(request):
 class ProjectViewSet(viewsets.ModelViewSet):
     queryset = Project.objects.all()
     serializer_class = ProjectSerializer
-    permission_classes = [permissions.IsAuthenticated, IsProjectManagerOrReadOnly]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         return Project.objects.filter(
@@ -74,13 +73,17 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(manager=self.request.user)
-    
 
-    def get_serializer_context(self):
-        context = super().get_serializer_context()
-        return context
-    
-    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated,IsProjectManagerOrReadOnly])
+    def update(self, request, *args, **kwargs):
+        project = self.get_object()
+        if project.manager != request.user and not request.user.is_staff:
+            return Response(
+                {'detail': 'Only the project manager or an admin can update this project.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().update(request, *args, **kwargs)
+
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def add_members(self, request, pk=None):
         project = self.get_object()
         if project.manager != request.user and not request.user.is_staff:
@@ -88,6 +91,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 {'detail': 'Only project manager or admin can add members'},
                 status=status.HTTP_403_FORBIDDEN
             )
+        
         user_ids = request.data.get('user_ids', [])
         
         if not user_ids:
@@ -95,25 +99,30 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 {'detail': 'No user IDs provided'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         User = get_user_model()
-        try:
-            users = User.objects.filter(id__in=user_ids)
-            project.project_members.add(*users)
+        existing_users = User.objects.filter(id__in=user_ids)
+        non_existent_ids = set(user_ids) - set(existing_users.values_list('id', flat=True))
+        
+        if non_existent_ids:
             return Response(
-                {'detail': 'Members added successfully'},
-                status=status.HTTP_200_OK
-            )
-        except Exception as e:
-            return Response(
-                {'detail': str(e)},
+                {
+                    'detail': 'Some user IDs do not exist',
+                    'non_existent_user_ids': list(non_existent_ids)
+                },
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+        project.project_members.add(*existing_users)
+        return Response(
+            {'detail': 'Members added successfully'},
+            status=status.HTTP_200_OK
+        )
 
 
 class TaskViewSet(viewsets.ModelViewSet):
     serializer_class = TaskSerializer
-    permission_classes = [permissions.IsAuthenticated, IsProjectManagerOrReadOnly]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         project_id = self.request.query_params.get('project_id', None)
@@ -128,10 +137,6 @@ class TaskViewSet(viewsets.ModelViewSet):
         if project.manager != self.request.user:
             raise PermissionDenied("Only project managers can create tasks.")
         serializer.save(assignee=project.manager)
-
-    def get_serializer_context(self):
-        context = super().get_serializer_context()
-        return context
 
     @action(detail=True, methods=['post'])
     def assign(self, request, pk=None):
