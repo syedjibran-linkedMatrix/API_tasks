@@ -17,6 +17,7 @@ from django.db.models import Q
 
 
 
+
 @api_view(['POST'])
 @permission_classes([permissions.AllowAny])
 def register_user(request):
@@ -82,6 +83,21 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
         return super().update(request, *args, **kwargs)
+    
+    def destroy(self, request, *args, **kwargs):
+        project = self.get_object()
+
+        if project.manager != request.user and not request.user.is_staff:
+            return Response(
+                {'detail': 'Only the project manager or an admin can delete this project.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        self.perform_destroy(project)
+        return Response(
+            {'detail': 'Project deleted successfully.'},
+            status=status.HTTP_204_NO_CONTENT
+        )
 
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def add_members(self, request, pk=None):
@@ -118,6 +134,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
             {'detail': 'Members added successfully'},
             status=status.HTTP_200_OK
         )
+    
 
 
 class TaskViewSet(viewsets.ModelViewSet):
@@ -128,34 +145,75 @@ class TaskViewSet(viewsets.ModelViewSet):
         project_id = self.request.query_params.get('project_id', None)
         if project_id is None:
             raise ValidationError({"error": "ProjectId must be given"})
-        queryset = Task.objects.filter(project_id=project_id)
-        
-        return queryset
+        return Task.objects.filter(
+            Q(assigned_to=self.request.user) |
+            Q(project__manager=self.request.user)
+        ).distinct()
 
     def perform_create(self, serializer):
-        project = Project.objects.get(pk=serializer.validated_data['project'].id)
+        project_id = serializer.validated_data['project'].id
+        project = Project.objects.get(pk=project_id)
+        
         if project.manager != self.request.user:
             raise PermissionDenied("Only project managers can create tasks.")
-        serializer.save(assignee=project.manager)
+        
+        assigned_to_users = self.request.data.get('assigned_to', [])
+        
+        if not assigned_to_users:
+            raise ValidationError({"error": "At least one assignee must be specified."})
+        
+        users = get_user_model().objects.filter(id__in=assigned_to_users)
+        
+        task = serializer.save(assignee=project.manager)
+        task.assigned_to.set(users)
+        task.save()
 
-    @action(detail=True, methods=['post'])
-    def assign(self, request, pk=None):
-        task = self.get_object()
-        if task.project.manager != request.user:
+    def update(self, request, *args, **kwargs):
+        #http://localhost:8000/api/tasks/5/?project_id=1
+        project_id = self.request.query_params.get('project_id')
+        if not project_id:
             return Response(
-                {"error": "Only project managers can assign tasks"},
+                {"error": "ProjectId must be given in query parameters."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        task = self.get_object()
+        if str(task.project.id) != project_id:
+            return Response(
+                {"error": "The provided ProjectId does not match the task's project."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if task.project.manager != request.user and not request.user.is_staff:
+            return Response(
+                {'detail': 'Only the project manager or an admin can update this task.'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        try:
-            assignee_id = request.data.get('assignee_id')
-            assignee = get_user_model().objects.get(pk=assignee_id)
-            task.assignee = assignee
-            task.save()
-            serializer = self.get_serializer(task)
-            return Response(serializer.data)
-        except get_user_model().DoesNotExist:
+        return super().update(request, *args, **kwargs)
+    
+    def destroy(self, request, *args, **kwargs):
+        project_id = self.request.query_params.get('project_id')
+        if not project_id:
             return Response(
-                {"error": "User not found"},
-                status=status.HTTP_404_NOT_FOUND
+                {"error": "ProjectId must be given in query parameters."},
+                status=status.HTTP_400_BAD_REQUEST
             )
+        
+        task = self.get_object()
+
+        if str(task.project.id) != project_id:
+            return Response(
+                {"error": "The provided ProjectId does not match the task's project."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if task.project.manager != request.user and not request.user.is_staff:
+            return Response(
+                {'detail': 'Only the project manager or an admin can delete this task.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        self.perform_destroy(task)
+        return Response(
+            {'detail': 'Task deleted successfully.'},
+            status=status.HTTP_204_NO_CONTENT
+        )

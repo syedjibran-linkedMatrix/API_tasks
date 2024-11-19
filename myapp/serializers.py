@@ -30,13 +30,14 @@ class UserSerializer(serializers.ModelSerializer):
 
 class TaskSerializer(serializers.ModelSerializer):
     assignee = UserSerializer(read_only=True)
+    assigned_to = UserSerializer(many=True, read_only=True)  
     project_title = serializers.CharField(source='project.title', read_only=True)
-    
+
     class Meta:
         model = Task
         fields = (
             'id', 'title', 'description', 'project', 'project_title',
-            'status', 'assignee', 'due_date', 'created_at', 'updated_at'
+            'status', 'assignee', 'assigned_to', 'due_date', 'created_at', 'updated_at'
         )
         read_only_fields = ('project_title',)
 
