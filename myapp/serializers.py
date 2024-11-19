@@ -79,12 +79,36 @@ class TaskSerializer(serializers.ModelSerializer):
 
 
 class ProjectSerializer(serializers.ModelSerializer):
-    title = serializers.CharField(required=True)
+    title = serializers.CharField(required=False)
     description = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
     class Meta:
         model = Project
         fields = ['id', 'title', 'description', 'manager', 'created_at', 'updated_at', 'project_members']
         read_only_fields = ['id', 'manager', 'created_at', 'updated_at']
+
+        user_ids = serializers.ListField(
+            child=serializers.IntegerField(),
+            allow_empty=False
+        )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not self.instance:
+            self.fields['title'].required = True
+
+    def validate_user_ids(self, value):
+        User = get_user_model()
+        existing_users = User.objects.filter(id__in=value)
+        
+        non_existent_ids = set(value) - set(existing_users.values_list('id', flat=True))
+        if non_existent_ids:
+            raise serializers.ValidationError({
+                'detail': 'Some user IDs do not exist',
+                'non_existent_user_ids': list(non_existent_ids)
+            })
+        
+        return value
 
     def validate_title(self, value):
         if not value or not value.strip():
@@ -94,19 +118,6 @@ class ProjectSerializer(serializers.ModelSerializer):
     def validate(self, data):
         if 'description' in data and data['description'] and not data['description'].strip():
             raise serializers.ValidationError({'description': "Description cannot be empty if provided."})
-        
-        if 'project_members' in data:
-            if not self.instance:
-                manager = self.context['request'].user
-                if manager in data['project_members']:
-                    raise serializers.ValidationError(
-                        {"project_members": "The project manager cannot be a project member."}
-                    )
-            for member in data['project_members']:
-                if not member.is_authenticated:
-                    raise serializers.ValidationError(
-                        f"User {member} is not a valid authenticated user."
-                    )
         
         return data
 

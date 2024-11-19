@@ -70,11 +70,6 @@ class ProjectViewSet(viewsets.ModelViewSet):
     serializer_class = ProjectSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-    def get_serializer_context(self):
-        context = super().get_serializer_context()
-        context['request'] = self.request
-        return context
-
     def get_queryset(self):
         return Project.objects.filter(
             Q(project_members=self.request.user) | 
@@ -86,6 +81,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
             raise serializers.ValidationError("Only project managers can create projects")
         
         serializer.save(manager=self.request.user)
+
 
     def update(self, request, *args, **kwargs):
         project = self.get_object()
@@ -110,46 +106,40 @@ class ProjectViewSet(viewsets.ModelViewSet):
             {'detail': 'Project deleted successfully.'},
             status=status.HTTP_204_NO_CONTENT
         )
-
-    @action(detail=True, methods=['post'])
     #http://localhost:8000/api/projects/1/add_members/
+    @action(detail=True, methods=['post'])
     def add_members(self, request, pk=None):
         project = self.get_object()
-        if project.manager != request.user and not request.user.is_staff:
+        
+        if not self.check_project_permission(project, request.user):
             return Response(
                 {'detail': 'Only project manager or admin can add members'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
         user_ids = request.data.get('user_ids', [])
-        
-        if not user_ids:
+        if not isinstance(user_ids, list):
             return Response(
-                {'detail': 'No user IDs provided'},
+                {'detail': 'user_ids must be a list'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-
+        
+        try:
+            validated_user_ids = self.get_serializer().validate_user_ids(user_ids)
+        except serializers.ValidationError as e:
+            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+        
         User = get_user_model()
-        existing_users = User.objects.filter(id__in=user_ids)
-        non_existent_ids = set(user_ids) - set(existing_users.values_list('id', flat=True))
+        existing_users = User.objects.filter(id__in=validated_user_ids)
         
-        if non_existent_ids:
-            return Response(
-                {
-                    'detail': 'Some user IDs do not exist',
-                    'non_existent_user_ids': list(non_existent_ids)
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
         project.project_members.add(*existing_users)
         return Response(
             {'detail': 'Members added successfully'},
             status=status.HTTP_200_OK
         )
-    
-    @action(detail=True, methods=['post'])
+        
     #http://localhost:8000/api/projects/12/remove_members/
+    @action(detail=True, methods=['post'])
     def remove_members(self, request, pk=None):
         project = self.get_object()
         
