@@ -1,10 +1,10 @@
 from datetime import timezone
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Project, Task
+from .models import Project, Task, Document
 from django.core.validators import MinLengthValidator, MaxLengthValidator
 
-
+User = get_user_model()
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
     
@@ -33,9 +33,11 @@ class UserSerializer(serializers.ModelSerializer):
 
 class TaskSerializer(serializers.ModelSerializer):
     assignee = UserSerializer(read_only=True)
-    assigned_to = UserSerializer(many=True, read_only=True)
+    assigned_to = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=User.objects.all(), required=True
+    )
     project_title = serializers.CharField(source='project.title', read_only=True)
-    
+
     title = serializers.CharField(
         required=True,
         validators=[
@@ -43,7 +45,7 @@ class TaskSerializer(serializers.ModelSerializer):
             MaxLengthValidator(100, message="Task title cannot exceed 100 characters.")
         ]
     )
-    
+
     description = serializers.CharField(
         required=False,
         allow_blank=True,
@@ -51,7 +53,7 @@ class TaskSerializer(serializers.ModelSerializer):
             MaxLengthValidator(500, message="Task description cannot exceed 500 characters.")
         ]
     )
-    
+
     due_date = serializers.DateField(
         required=False,
         allow_null=True
@@ -63,18 +65,30 @@ class TaskSerializer(serializers.ModelSerializer):
             'id', 'title', 'description', 'project', 'project_title',
             'status', 'assignee', 'assigned_to', 'due_date', 'created_at', 'updated_at'
         )
-        read_only_fields = ('project_title', 'created_at', 'updated_at')
-    
+        read_only_fields = ('project', 'project_title', 'created_at', 'updated_at')
+
     def validate_due_date(self, value):
         if value and value < timezone.now().date():
             raise serializers.ValidationError("Due date must be in the future.")
         return value
-    
+
+    def validate_assigned_to(self, value):
+  
+        if not value:
+            raise serializers.ValidationError("At least one assignee must be specified.")
+        
+        invalid_users = [user_id for user_id in value if not User.objects.filter(pk=user_id).exists()]
+        if invalid_users:
+            raise serializers.ValidationError(f"Invalid user IDs: {invalid_users}")
+        
+        return value
+
     def validate(self, data):
         if data.get('status') and not data.get('assigned_to'):
             raise serializers.ValidationError({
                 "assigned_to": "Tasks with a status must have at least one assignee."
             })
+
         return data
 
 
@@ -97,18 +111,6 @@ class ProjectSerializer(serializers.ModelSerializer):
         if not self.instance:
             self.fields['title'].required = True
 
-    def validate_user_ids(self, value):
-        User = get_user_model()
-        existing_users = User.objects.filter(id__in=value)
-        
-        non_existent_ids = set(value) - set(existing_users.values_list('id', flat=True))
-        if non_existent_ids:
-            raise serializers.ValidationError({
-                'detail': 'Some user IDs do not exist',
-                'non_existent_user_ids': list(non_existent_ids)
-            })
-        
-        return value
 
     def validate_title(self, value):
         if not value or not value.strip():
@@ -120,6 +122,76 @@ class ProjectSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'description': "Description cannot be empty if provided."})
         
         return data
+    
+
+class AddMembersSerializer(serializers.Serializer):
+    user_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        allow_empty=False,
+        write_only=True
+    )
+
+    def validate_user_ids(self, value):
+        project = self.context.get('project')
+        User = get_user_model()
+
+        existing_users = User.objects.filter(id__in=value)
+        non_existent_ids = set(value) - set(existing_users.values_list('id', flat=True))
+        if non_existent_ids:
+            raise serializers.ValidationError({
+                'detail': 'Some user IDs do not exist',
+                'non_existent_user_ids': list(non_existent_ids)
+            })
+
+        existing_members = project.project_members.filter(id__in=value)
+        if existing_members.exists():
+            raise serializers.ValidationError({
+                'detail': 'Some users are already members of this project',
+                'existing_member_ids': list(existing_members.values_list('id', flat=True))
+            })
+
+        return value
+    
+class RemoveMembersSerializer(serializers.Serializer):
+    user_ids = serializers.ListField(
+        child=serializers.IntegerField(), allow_empty=False, write_only=True
+    )
+
+    def validate_user_ids(self, value):
+        project = self.context.get('project')
+        User = get_user_model()
+
+        existing_users = User.objects.filter(id__in=value)
+        non_existent_ids = set(value) - set(existing_users.values_list('id', flat=True))
+        if non_existent_ids:
+            raise serializers.ValidationError(
+                {
+                    'detail': 'Some user IDs do not exist',
+                    'non_existent_user_ids': list(non_existent_ids),
+                }
+            )
+
+        non_members = existing_users.exclude(id__in=project.project_members.values_list('id', flat=True))
+        if non_members.exists():
+            raise serializers.ValidationError(
+                {
+                    'detail': 'Some users are not members of this project',
+                    'non_project_member_ids': list(non_members.values_list('id', flat=True)),
+                }
+            )
+
+        return value
+    
+
+class DocumentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Document
+        fields = ['id', 'file', 'uploaded_by', 'uploaded_at']
+        read_only_fields = ['uploaded_by', 'uploaded_at']
+
+    def save(self, **kwargs):
+        kwargs['task'] = self.context['task']
+        return super().save(**kwargs)
 
 
     

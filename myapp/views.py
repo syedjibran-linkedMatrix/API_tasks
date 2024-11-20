@@ -4,20 +4,19 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.authtoken.models import Token
 from django.contrib.auth import authenticate
-from .models import Project, Task
-from .serializers import UserRegistrationSerializer, UserLoginSerializer, ProjectSerializer, TaskSerializer
+from .models import Project, Task, Document
+from .serializers import (UserRegistrationSerializer, UserLoginSerializer, RemoveMembersSerializer, AddMembersSerializer)
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from .serializers import (
-    ProjectSerializer, TaskSerializer
+    ProjectSerializer, TaskSerializer,
+    DocumentSerializer
 )
 from rest_framework.exceptions import PermissionDenied
 from django.contrib.auth import get_user_model
 from django.db.models import Q
 from rest_framework import serializers
-
-
-
+from rest_framework.exceptions import NotFound
 
 
 @api_view(['POST'])
@@ -82,7 +81,6 @@ class ProjectViewSet(viewsets.ModelViewSet):
         
         serializer.save(manager=self.request.user)
 
-
     def update(self, request, *args, **kwargs):
         project = self.get_object()
         if project.manager != request.user and not request.user.is_staff:
@@ -110,89 +108,51 @@ class ProjectViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def add_members(self, request, pk=None):
         project = self.get_object()
-        
-        if not self.check_project_permission(project, request.user):
+
+        if project.manager != request.user and not request.user.is_staff:
             return Response(
                 {'detail': 'Only project manager or admin can add members'},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
-        user_ids = request.data.get('user_ids', [])
-        if not isinstance(user_ids, list):
-            return Response(
-                {'detail': 'user_ids must be a list'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        try:
-            validated_user_ids = self.get_serializer().validate_user_ids(user_ids)
-        except serializers.ValidationError as e:
-            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
-        
+
+        serializer = AddMembersSerializer(data=request.data, context={'project': project})
+        serializer.is_valid(raise_exception=True)
+
+        user_ids = serializer.validated_data['user_ids']
         User = get_user_model()
-        existing_users = User.objects.filter(id__in=validated_user_ids)
-        
-        project.project_members.add(*existing_users)
-        return Response(
-            {'detail': 'Members added successfully'},
-            status=status.HTTP_200_OK
-        )
+        users_to_add = User.objects.filter(id__in=user_ids)
+        project.project_members.add(*users_to_add)
+
+        return Response({'detail': 'Members added successfully'}, status=status.HTTP_200_OK)
         
     #http://localhost:8000/api/projects/12/remove_members/
     @action(detail=True, methods=['post'])
     def remove_members(self, request, pk=None):
         project = self.get_object()
-        
+
         if project.manager != request.user and not request.user.is_staff:
             return Response(
-                {'detail': 'Only project manager or admin can remove members'},
+                {'detail': 'Only the project manager or admin can remove members'},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
-        user_ids = request.data.get('user_ids', [])
-        
-        if not user_ids:
-            return Response(
-                {'detail': 'No user IDs provided'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
 
+        serializer = RemoveMembersSerializer(data=request.data, context={'project': project})
+        serializer.is_valid(raise_exception=True)
+
+        user_ids = serializer.validated_data['user_ids']
         User = get_user_model()
-        existing_users = User.objects.filter(id__in=user_ids)
+        users_to_remove = User.objects.filter(id__in=user_ids)
+        project.project_members.remove(*users_to_remove)
 
-        non_existent_ids = set(user_ids) - set(existing_users.values_list('id', flat=True))
-        if non_existent_ids:
-            return Response(
-                {
-                    'detail': 'Some user IDs do not exist',
-                    'non_existent_user_ids': list(non_existent_ids)
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        non_members = existing_users.exclude(id__in=project.project_members.values_list('id', flat=True))
-        if non_members.exists():
-            return Response(
-                {
-                    'detail': 'Some users are not members of this project',
-                    'non_project_member_ids': list(non_members.values_list('id', flat=True))
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        project_members_to_remove = existing_users.filter(id__in=project.project_members.values_list('id', flat=True))
-        project.project_members.remove(*project_members_to_remove)
-        
-        return Response(
-            {'detail': 'Members removed successfully'},
-            status=status.HTTP_200_OK
-        )
+        return Response({'detail': 'Members removed successfully'}, status=status.HTTP_200_OK)
     
 
 
 class TaskViewSet(viewsets.ModelViewSet):
     serializer_class = TaskSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    
 
     def get_queryset(self):
         project_id = self.request.query_params.get('project_id', None)
@@ -202,27 +162,29 @@ class TaskViewSet(viewsets.ModelViewSet):
             Q(assigned_to=self.request.user) |
             Q(project__manager=self.request.user)
         ).distinct()
-
+    
+    #localhost:8000/api/tasks/?project_id=12
     def perform_create(self, serializer):
-        project_id = serializer.validated_data['project'].id
+        project_id = self.request.query_params.get('project_id')
+        if not project_id:
+            raise ValidationError({"error": "Project ID is required in query parameters"})
+        
         project = Project.objects.get(pk=project_id)
         
         if project.manager != self.request.user:
             raise PermissionDenied("Only project managers can create tasks.")
         
-        assigned_to_users = self.request.data.get('assigned_to', [])
-        
-        if not assigned_to_users:
-            raise ValidationError({"error": "At least one assignee must be specified."})
-        
-        users = get_user_model().objects.filter(id__in=assigned_to_users)
-        
-        task = serializer.save(assignee=project.manager)
-        task.assigned_to.set(users)
-        task.save()
+        # Create the task first
+        task = serializer.save(project=project)
+        User = get_user_model()
 
+        # Assign users to the task
+        assigned_to = serializer.validated_data['assigned_to']
+        users_to_add = User.objects.filter(id__in=assigned_to)
+        task.assigned_to.add(*users_to_add)
+
+    #http://localhost:8000/api/tasks/5/?project_id=1
     def update(self, request, *args, **kwargs):
-        #http://localhost:8000/api/tasks/5/?project_id=1
         project_id = self.request.query_params.get('project_id')
         if not project_id:
             return Response(
@@ -269,4 +231,74 @@ class TaskViewSet(viewsets.ModelViewSet):
         return Response(
             {'detail': 'Task deleted successfully.'},
             status=status.HTTP_204_NO_CONTENT
+        )
+    
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    def upload_document(self, request, pk=None):
+   
+        try:
+            task = Task.objects.get(pk=pk)
+        except Task.DoesNotExist:
+            return Response(
+                {'detail': 'Task not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        if request.user != task.assignee and request.user not in task.assigned_to.all():
+            return Response(
+                {'detail': 'You do not have permission to upload documents for this task.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        serializer = DocumentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(uploaded_by=request.user, task=task)
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    
+    #http://localhost:8000/api/tasks/8/documents/
+    @action(detail=True, methods=['get'], permission_classes=[permissions.IsAuthenticated])
+    def documents(self, request, pk=None):
+        try:
+            task = Task.objects.get(pk=pk)
+        except Task.DoesNotExist:
+            raise NotFound("Task not found.")
+
+        if request.user != task.assignee and request.user not in task.assigned_to.all():
+            return Response(
+                {'detail': 'You do not have permission to view documents for this task.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        documents = task.documents.all()
+        serializer = DocumentSerializer(documents, many=True)
+
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    #http://localhost:8000/api/tasks/8/documents/1/
+    @action(detail=True, url_path='documents/(?P<document_id>[^/.]+)', methods=['delete'], permission_classes=[permissions.IsAuthenticated])
+    def delete_document(self, request, pk=None, document_id=None):
+        try:
+            task = Task.objects.get(pk=pk)
+        except Task.DoesNotExist:
+            raise NotFound("Task not found.")
+
+        try:
+            document = Document.objects.get(pk=document_id)
+        except document.DoesNotExist:
+            raise NotFound("Document not found.")
+
+        if document.task != task:
+            return Response(
+                {"detail": "The document does not belong to this task."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
+        if request.user != document.uploaded_by and request.user != task.assignee:
+            raise PermissionDenied("You do not have permission to delete this document.")
+
+        document.delete()
+        return Response(
+            {"detail": "Document deleted successfully."},
+            status=status.HTTP_204_NO_CONTENT,
         )

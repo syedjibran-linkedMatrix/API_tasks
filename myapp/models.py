@@ -78,3 +78,22 @@ class Task(models.Model):
     def __str__(self):
         return f"{self.title} - {self.project.title}"
     
+class Document(models.Model):
+    file = models.FileField(upload_to='documents/')
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE,
+        related_name='uploaded_documents'
+    )
+    task = models.ForeignKey(
+        Task,
+        on_delete=models.CASCADE,
+        related_name='documents'
+    )
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Document for Task: {self.task.title} by {self.uploaded_by.username}"
+
+
+    
