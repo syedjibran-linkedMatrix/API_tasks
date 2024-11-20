@@ -171,6 +171,7 @@ class TaskViewSet(viewsets.ModelViewSet):
         
         project = Project.objects.get(pk=project_id)
         
+        
         if project.manager != self.request.user:
             raise PermissionDenied("Only project manager of this project can create tasks.")
         
@@ -196,9 +197,9 @@ class TaskViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        if task.project.manager != request.user and not request.user.is_staff:
+        if task.project.manager != request.user:
             return Response(
-                {'detail': 'Only the project manager or an admin can update this task.'},
+                {'detail': 'Only the project manager of this project can update task.'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
@@ -219,9 +220,9 @@ class TaskViewSet(viewsets.ModelViewSet):
                 {"error": "The provided ProjectId does not match the task's project."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        if task.project.manager != request.user and not request.user.is_staff:
+        if task.project.manager != request.user:
             return Response(
-                {'detail': 'Only the project manager or an admin can delete this task.'},
+                {'detail': 'Only the project manager of this project can delete task.'},
                 status=status.HTTP_403_FORBIDDEN
             )
         self.perform_destroy(task)

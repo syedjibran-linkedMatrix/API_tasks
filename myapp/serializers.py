@@ -2,9 +2,9 @@ from datetime import timezone
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import Project, Task, Document
-from django.core.validators import MinLengthValidator, MaxLengthValidator
 
 User = get_user_model()
+
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
     
