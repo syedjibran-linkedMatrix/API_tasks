@@ -5,12 +5,13 @@ from rest_framework.response import Response
 from rest_framework.authtoken.models import Token
 from django.contrib.auth import authenticate
 from .models import Project, Task, Document
-from .serializers import (UserRegistrationSerializer, UserLoginSerializer, RemoveMembersSerializer, AddMembersSerializer)
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from .serializers import (
     ProjectSerializer, TaskSerializer,
-    DocumentSerializer
+    DocumentSerializer, UserRegistrationSerializer,
+    UserLoginSerializer, RemoveMembersSerializer,
+    AddMembersSerializer
 )
 from rest_framework.exceptions import PermissionDenied
 from django.contrib.auth import get_user_model
@@ -18,6 +19,7 @@ from django.db.models import Q
 from rest_framework import serializers
 from rest_framework.exceptions import NotFound
 
+User = get_user_model()
 
 @api_view(['POST'])
 @permission_classes([permissions.AllowAny])
@@ -77,7 +79,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         if self.request.user.role != 'project_manager':
-            raise serializers.ValidationError("Only project managers can create projects")
+            raise PermissionDenied("Only project managers can create projects")
         
         serializer.save(manager=self.request.user)
 
@@ -104,6 +106,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
             {'detail': 'Project deleted successfully.'},
             status=status.HTTP_204_NO_CONTENT
         )
+    
+
     #http://localhost:8000/api/projects/1/add_members/
     @action(detail=True, methods=['post'])
     def add_members(self, request, pk=None):
@@ -119,7 +123,6 @@ class ProjectViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
 
         user_ids = serializer.validated_data['user_ids']
-        User = get_user_model()
         users_to_add = User.objects.filter(id__in=user_ids)
         project.project_members.add(*users_to_add)
 
@@ -140,7 +143,6 @@ class ProjectViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
 
         user_ids = serializer.validated_data['user_ids']
-        User = get_user_model()
         users_to_remove = User.objects.filter(id__in=user_ids)
         project.project_members.remove(*users_to_remove)
 
@@ -151,8 +153,6 @@ class ProjectViewSet(viewsets.ModelViewSet):
 class TaskViewSet(viewsets.ModelViewSet):
     serializer_class = TaskSerializer
     permission_classes = [permissions.IsAuthenticated]
-
-    
 
     def get_queryset(self):
         project_id = self.request.query_params.get('project_id', None)
@@ -172,16 +172,13 @@ class TaskViewSet(viewsets.ModelViewSet):
         project = Project.objects.get(pk=project_id)
         
         if project.manager != self.request.user:
-            raise PermissionDenied("Only project managers can create tasks.")
+            raise PermissionDenied("Only project manager of this project can create tasks.")
         
-        # Create the task first
-        task = serializer.save(project=project)
-        User = get_user_model()
+        serializer.save(
+            assignee=project.manager, 
+            project=project
+        )
 
-        # Assign users to the task
-        assigned_to = serializer.validated_data['assigned_to']
-        users_to_add = User.objects.filter(id__in=assigned_to)
-        task.assigned_to.add(*users_to_add)
 
     #http://localhost:8000/api/tasks/5/?project_id=1
     def update(self, request, *args, **kwargs):

@@ -34,30 +34,13 @@ class UserSerializer(serializers.ModelSerializer):
 class TaskSerializer(serializers.ModelSerializer):
     assignee = UserSerializer(read_only=True)
     assigned_to = serializers.PrimaryKeyRelatedField(
-        many=True, queryset=User.objects.all(), required=True
+        many=True, 
+        queryset=User.objects.all(),
     )
+    description = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+    
     project_title = serializers.CharField(source='project.title', read_only=True)
-
-    title = serializers.CharField(
-        required=True,
-        validators=[
-            MinLengthValidator(3, message="Task title must be at least 3 characters long."),
-            MaxLengthValidator(100, message="Task title cannot exceed 100 characters.")
-        ]
-    )
-
-    description = serializers.CharField(
-        required=False,
-        allow_blank=True,
-        validators=[
-            MaxLengthValidator(500, message="Task description cannot exceed 500 characters.")
-        ]
-    )
-
-    due_date = serializers.DateField(
-        required=False,
-        allow_null=True
-    )
 
     class Meta:
         model = Task
@@ -67,29 +50,21 @@ class TaskSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ('project', 'project_title', 'created_at', 'updated_at')
 
+    def create(self, validated_data):
+        assigned_to_users = validated_data.pop('assigned_to', [])
+        
+        task = Task.objects.create(**validated_data)
+        
+        if assigned_to_users:
+            task.assigned_to.add(*assigned_to_users)
+        
+        return task
+
     def validate_due_date(self, value):
         if value and value < timezone.now().date():
             raise serializers.ValidationError("Due date must be in the future.")
         return value
 
-    def validate_assigned_to(self, value):
-  
-        if not value:
-            raise serializers.ValidationError("At least one assignee must be specified.")
-        
-        invalid_users = [user_id for user_id in value if not User.objects.filter(pk=user_id).exists()]
-        if invalid_users:
-            raise serializers.ValidationError(f"Invalid user IDs: {invalid_users}")
-        
-        return value
-
-    def validate(self, data):
-        if data.get('status') and not data.get('assigned_to'):
-            raise serializers.ValidationError({
-                "assigned_to": "Tasks with a status must have at least one assignee."
-            })
-
-        return data
 
 
 class ProjectSerializer(serializers.ModelSerializer):
@@ -159,7 +134,6 @@ class RemoveMembersSerializer(serializers.Serializer):
 
     def validate_user_ids(self, value):
         project = self.context.get('project')
-        User = get_user_model()
 
         existing_users = User.objects.filter(id__in=value)
         non_existent_ids = set(value) - set(existing_users.values_list('id', flat=True))

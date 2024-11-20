@@ -68,7 +68,7 @@ class Task(models.Model):
     )
     assigned_to = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
-        blank=False,
+        blank=True,
         related_name='assigned_to'
     )
     due_date = models.DateField(null=True, blank=True)
