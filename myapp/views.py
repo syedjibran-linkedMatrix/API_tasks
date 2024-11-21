@@ -16,7 +16,6 @@ from .serializers import (
 from rest_framework.exceptions import PermissionDenied
 from django.contrib.auth import get_user_model
 from django.db.models import Q
-from rest_framework import serializers
 from rest_framework.exceptions import NotFound
 
 User = get_user_model()
@@ -154,77 +153,73 @@ class TaskViewSet(viewsets.ModelViewSet):
     serializer_class = TaskSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-    def get_queryset(self):
-        project_id = self.request.query_params.get('project_id', None)
-        if project_id is None:
-            raise ValidationError({"error": "ProjectId must be given"})
-        return Task.objects.filter(
-            Q(assigned_to=self.request.user) |
-            Q(project__manager=self.request.user)
-        ).distinct()
-    
-    #localhost:8000/api/tasks/?project_id=12
-    def perform_create(self, serializer):
-        project_id = self.request.query_params.get('project_id')
+    def _validate_project_id(self, project_id=None):
         if not project_id:
             raise ValidationError({"error": "Project ID is required in query parameters"})
         
-        project = Project.objects.get(pk=project_id)
+        try:
+            project = Project.objects.get(pk=project_id)
+        except Project.DoesNotExist:
+            raise ValidationError({"error": "Invalid Project ID"})
         
+        return project
+
+    def get_queryset(self):
+        project_id = self.request.query_params.get('project_id')
+        if project_id is None:
+            raise ValidationError({"error": "ProjectId must be given"})
+        
+        return Task.objects.filter(
+            Q(assigned_to=self.request.user) |
+            Q(project__manager=self.request.user),
+            project_id=project_id
+        ).distinct()
+
+    def perform_create(self, serializer):
+        project = self._validate_project_id(
+            self.request.query_params.get('project_id')
+        )
         
         if project.manager != self.request.user:
-            raise PermissionDenied("Only project manager of this project can create tasks.")
+            raise PermissionDenied("Only project manager can create tasks.")
         
         serializer.save(
             assignee=project.manager, 
             project=project
         )
 
-
-    #http://localhost:8000/api/tasks/5/?project_id=1
     def update(self, request, *args, **kwargs):
-        project_id = self.request.query_params.get('project_id')
-        if not project_id:
-            return Response(
-                {"error": "ProjectId must be given in query parameters."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        project = self._validate_project_id(
+            request.query_params.get('project_id')
+        )
         
         task = self.get_object()
-        if str(task.project.id) != project_id:
-            return Response(
-                {"error": "The provided ProjectId does not match the task's project."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        
+        if task.project != project:
+            raise ValidationError({
+                "error": "The provided ProjectId does not match the task's project."
+            })
         
         if task.project.manager != request.user:
-            return Response(
-                {'detail': 'Only the project manager of this project can update task.'},
-                status=status.HTTP_403_FORBIDDEN
-            )
+            raise PermissionDenied('Only the project manager can update this task.')
         
         return super().update(request, *args, **kwargs)
-    
+
     def destroy(self, request, *args, **kwargs):
-        project_id = self.request.query_params.get('project_id')
-        if not project_id:
-            return Response(
-                {"error": "ProjectId must be given in query parameters."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        project = self._validate_project_id(
+            request.query_params.get('project_id')
+        )
         
         task = self.get_object()
-
-        if str(task.project.id) != project_id:
-            return Response(
-                {"error": "The provided ProjectId does not match the task's project."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        
+        if task.project != project:
+            raise ValidationError({
+                "error": "The provided ProjectId does not match the task's project."
+            })
+        
         if task.project.manager != request.user:
-            return Response(
-                {'detail': 'Only the project manager of this project can delete task.'},
-                status=status.HTTP_403_FORBIDDEN
-            )
+            raise PermissionDenied('Only the project manager can delete this task.')
+        
         self.perform_destroy(task)
         return Response(
             {'detail': 'Task deleted successfully.'},
