@@ -1,8 +1,8 @@
-from datetime import timezone
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import Project, Task, Document, Comment
 from django.core.validators import MinLengthValidator, MaxLengthValidator
+from django.utils import timezone
 
 
 User = get_user_model()
@@ -36,22 +36,17 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class TaskSerializer(serializers.ModelSerializer):
-
+    project_id = serializers.IntegerField(write_only=True)
     description = serializers.CharField(
         required=False,
         allow_blank=True,
         allow_null=True,
         max_length=1000,
         validators=[
-            MinLengthValidator(
-                10, message="Description must be at least 10 characters long."
-            ),
-            MaxLengthValidator(
-                1000, message="Description cannot exceed 1000 characters."
-            ),
+            MinLengthValidator(10, "Description must be at least 10 characters long."),
+            MaxLengthValidator(1000, "Description cannot exceed 1000 characters."),
         ],
     )
-
     assignee = UserSerializer(read_only=True)
 
     class Meta:
@@ -60,7 +55,7 @@ class TaskSerializer(serializers.ModelSerializer):
             "id",
             "title",
             "description",
-            "project",
+            "project_id",
             "status",
             "assignee",
             "assigned_to",
@@ -68,75 +63,69 @@ class TaskSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
-        read_only_fields = (
-            "project",
-            "created_at",
-            "updated_at",
-        )
+        read_only_fields = ("created_at", "updated_at")
         extra_kwargs = {
             "title": {
                 "validators": [
-                    MinLengthValidator(
-                        3, message="Title must be at least 3 characters long."
-                    ),
-                    MaxLengthValidator(
-                        100, message="Title cannot exceed 100 characters."
-                    ),
+                    MinLengthValidator(3, "Title must be at least 3 characters long."),
+                    MaxLengthValidator(100, "Title cannot exceed 100 characters."),
                 ]
             }
         }
 
     def validate_due_date(self, value):
-        if value:
-            if value < timezone.now().date():
-                raise serializers.ValidationError("Due date must be in the future.")
+        if value and (value < timezone.now().date() or value > timezone.now().date().replace(year=timezone.now().year + 1)):
+            raise serializers.ValidationError(
+                "Due date must be in the future and within one year from today."
+            )
+        return value
 
-            max_due_date = timezone.now().date().replace(year=timezone.now().year + 1)
-            if value > max_due_date:
-                raise serializers.ValidationError(
-                    "Due date cannot be more than one year in the future."
-                )
+    def validate(self, data):
+        project_id = data.get('project_id')
+        if not project_id:
+            raise serializers.ValidationError({"project_id": "Project ID is required."})
 
+        try:
+            project = Project.objects.get(pk=project_id)
+        except Project.DoesNotExist:
+            raise serializers.ValidationError({"project_id": "Invalid Project ID"})
+
+        request = self.context.get('request')
+        if project.manager != request.user:
+            raise serializers.ValidationError("Only project manager can create tasks.")
+
+        return data
+
+    def validate_assigned_to(self, value):
+        if not value:
+            raise serializers.ValidationError("At least one user must be assigned.")
+        
+        user_ids = [user.id for user in value]
+        existing_users = User.objects.filter(id__in=user_ids)
+        
+        if len(existing_users) != len(value):
+            raise serializers.ValidationError("One or more invalid user IDs.")
+        
         return value
 
     def create(self, validated_data):
-        assigned_to_data = self.context["request"].data.get("assigned_to", [])
-
-        if not assigned_to_data:
-            raise serializers.ValidationError(
-                {"assigned_to": "This field is required."}
-            )
-
-        try:
-            assigned_users = User.objects.filter(id__in=assigned_to_data)
-            if len(assigned_users) != len(assigned_to_data):
-                raise serializers.ValidationError(
-                    {"assigned_to": "Invalid user IDs provided."}
-                )
-        except (ValueError, TypeError):
-            raise serializers.ValidationError(
-                {"assigned_to": "Invalid user IDs format."}
-            )
-
-        validated_data.pop("assigned_to", None)
-
+        assigned_users = validated_data.pop('assigned_to')
         task = Task.objects.create(**validated_data)
-
         task.assigned_to.set(assigned_users)
-
-        if task.project:
-            setattr(task, "project_title", task.project.title)
-
         return task
 
     def update(self, instance, validated_data):
+        project_id = validated_data.get('project_id', None)
+        if project_id and project_id != instance.project.id:
+            raise serializers.ValidationError("Project ID cannot be changed.")
+
         if "assigned_to" in validated_data:
-            assigned_to_users = validated_data.pop("assigned_to")
-            instance.assigned_to.clear()
-            if assigned_to_users:
-                instance.assigned_to.add(*assigned_to_users)
+            assigned_to_data = validated_data.pop("assigned_to", [])
+            assigned_users = self.validate_assigned_to(assigned_to_data)
+            instance.assigned_to.set(assigned_users)
 
         return super().update(instance, validated_data)
+
 
 
 class ProjectSerializer(serializers.ModelSerializer):

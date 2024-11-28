@@ -72,15 +72,19 @@ class ProjectViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return Project.objects.filter(
+        return self.queryset.filter(
             Q(project_members=self.request.user) | Q(manager=self.request.user)
         ).distinct()
 
-    def perform_create(self, serializer):
-        if self.request.user.role != "project_manager":
+    def create(self, request, *args, **kwargs):
+        if request.user.role != "project_manager":
             raise PermissionDenied("Only project managers can create projects")
 
-        serializer.save(manager=self.request.user)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(manager=request.user)  
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     def update(self, request, *args, **kwargs):
         project = self.get_object()
@@ -163,61 +167,26 @@ class TaskViewSet(viewsets.ModelViewSet):
     serializer_class = TaskSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-    def _validate_project_id(self, project_id=None):
-        if not project_id:
-            raise ValidationError(
-                {"error": "Project ID is required in query parameters"}
-            )
-
-        try:
-            project = Project.objects.get(pk=project_id)
-        except Project.DoesNotExist:
-            raise ValidationError({"error": "Invalid Project ID"})
-
-        return project
-
     def get_queryset(self):
-        project_id = self.request.query_params.get("project_id")
-        if project_id is None:
-            raise ValidationError({"error": "ProjectId must be given"})
-
         return Task.objects.filter(
-            Q(assigned_to=self.request.user) | Q(project__manager=self.request.user),
-            project_id=project_id,
+            Q(assigned_to=self.request.user) | Q(project__manager=self.request.user)
         ).distinct()
 
-    def perform_create(self, serializer):
-        project = self._validate_project_id(self.request.query_params.get("project_id"))
-
-        if project.manager != self.request.user:
-            raise PermissionDenied("Only project manager can create tasks.")
-
-        serializer.save(assignee=project.manager, project=project)
-
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    
     def update(self, request, *args, **kwargs):
-        project = self._validate_project_id(request.query_params.get("project_id"))
-
         task = self.get_object()
-
-        if task.project != project:
-            raise ValidationError(
-                {"error": "The provided ProjectId does not match the task's project."}
-            )
-
         if task.project.manager != request.user:
             raise PermissionDenied("Only the project manager can update this task.")
 
-        return super().update(request, *args, **kwargs)
+        return super().update(request, *args, **kwargs) 
 
     def destroy(self, request, *args, **kwargs):
-        project = self._validate_project_id(request.query_params.get("project_id"))
-
         task = self.get_object()
-
-        if task.project != project:
-            raise ValidationError(
-                {"error": "The provided ProjectId does not match the task's project."}
-            )
 
         if task.project.manager != request.user:
             raise PermissionDenied("Only the project manager can delete this task.")
@@ -227,9 +196,7 @@ class TaskViewSet(viewsets.ModelViewSet):
             {"detail": "Task deleted successfully."}, status=status.HTTP_204_NO_CONTENT
         )
 
-    @action(
-        detail=True, methods=["post"], permission_classes=[permissions.IsAuthenticated]
-    )
+    @action(detail=True, methods=["post"])
     def upload_document(self, request, pk=None):
 
         try:
