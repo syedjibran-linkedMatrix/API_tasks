@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import User, Project, Task, Document
+from .models import User, Project, Task, Document, Comment
 
 @admin.register(User)
 class UserAdmin(admin.ModelAdmin):
@@ -16,3 +16,7 @@ class TaskAdmin(admin.ModelAdmin):
 @admin.register(Document)
 class DocumentAdmin(admin.ModelAdmin):
     list_display = ('id', 'uploaded_by', 'task')
+
+@admin.register(Comment)
+class CommentAdmin(admin.ModelAdmin):
+    list_display = ('id', 'created_by')

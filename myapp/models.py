@@ -94,6 +94,24 @@ class Document(models.Model):
 
     def __str__(self):
         return f"Document for Task: {self.task.title} by {self.uploaded_by.username}"
+    
+class Comment(models.Model):
+    content = models.TextField()
+    task = models.ForeignKey(
+        Task, 
+        on_delete=models.CASCADE, 
+        related_name='comments'
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='created_comments'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Comment by {self.created_by.username} on {self.task.title}"
 
 
     
