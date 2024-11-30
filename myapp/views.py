@@ -1,4 +1,3 @@
-from django.forms import ValidationError
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -83,7 +82,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save()  
+        serializer.save()
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -169,14 +168,13 @@ class TaskViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     queryset = Task.objects.all()
 
-
     def get_queryset(self):
         return self.queryset.filter(
             Q(assigned_to=self.request.user) | Q(project__manager=self.request.user)
         ).distinct()
 
     def create(self, request, *args, **kwargs):
-        project_id = request.data.get('project_id')
+        project_id = request.data.get("project_id")
 
         try:
             project = Project.objects.get(pk=project_id)
@@ -193,13 +191,13 @@ class TaskViewSet(viewsets.ModelViewSet):
         serializer.save()
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
-    
+
     def update(self, request, *args, **kwargs):
         task = self.get_object()
 
         if task.project.manager != request.user:
             raise PermissionDenied("Only the project manager can update this task.")
-        
+
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -218,7 +216,7 @@ class TaskViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def upload_document(self, request, pk=None):
-        task = self.get_object(pk=pk)
+        task = get_object_or_404(Task, pk=pk)
         if request.user != task.assignee and request.user not in task.assigned_to.all():
             return Response(
                 {
@@ -227,18 +225,19 @@ class TaskViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        serializer = DocumentSerializer(data=request.data)
+        serializer = DocumentSerializer(
+            data={**request.data, "task": task.id, "uploaded_by": request.user.id}
+        )
         serializer.is_valid(raise_exception=True)
         serializer.save()
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     # http://localhost:8000/api/tasks/8/documents/
-    @action(
-        detail=True, methods=["get"])
+    @action(detail=True, methods=["get"])
     def documents(self, request, pk=None):
 
-        task = Task.objects.get(pk=pk)
+        task = get_object_or_404(Task, pk=pk)
 
         if request.user != task.assignee and request.user not in task.assigned_to.all():
             return Response(
@@ -261,8 +260,8 @@ class TaskViewSet(viewsets.ModelViewSet):
     )
     def delete_document(self, request, pk=None, document_id=None):
 
-        task = Task.objects.get(pk=pk)
-        document = Document.objects.get(pk=document_id)
+        task = get_object_or_404(Task, pk=pk)
+        document = get_object_or_404(Document, pk=document_id, task=task)
 
         if request.user != document.uploaded_by and request.user != task.assignee:
             raise PermissionDenied(
@@ -276,29 +275,29 @@ class TaskViewSet(viewsets.ModelViewSet):
         )
 
     # http://localhost:8000/api/tasks/8/add_comment/
-    @action(
-        detail=True, methods=["post"])
+    @action(detail=True, methods=["post"])
     def add_comment(self, request, pk=None):
-        task = Task.objects.get(pk=pk)
-        
+        task = get_object_or_404(Task, pk=pk)
+
         if request.user != task.assignee and request.user not in task.assigned_to.all():
             raise Response(
                 {"detail": "You do not have permission to add comment for this task."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        serializer = CommentSerializer(data=request.data, context={'request': request, 'task': task})
+        serializer = CommentSerializer(
+            data=request.data, context={"request": request, "task": task}
+        )
         serializer.is_valid(raise_exception=True)
         serializer.save()
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     # http://localhost:8000/api/tasks/8/comments/
-    @action(
-        detail=True, methods=["get"])
+    @action(detail=True, methods=["get"])
     def comments(self, request, pk=None):
 
-        task = Task.objects.get(pk=pk)
+        task = get_object_or_404(Task, pk=pk)
 
         if request.user != task.assignee and request.user not in task.assigned_to.all():
             return Response(
@@ -317,9 +316,9 @@ class TaskViewSet(viewsets.ModelViewSet):
         methods=["delete"],
     )
     def delete_comment(self, request, pk=None, comment_id=None):
-        
-        task = Task.objects.get(pk=pk)
-        comment = Comment.objects.get(pk=comment_id)
+
+        task = get_object_or_404(Task, pk=pk)
+        comment = get_object_or_404(Comment, pk=comment_id, task=task)
 
         if request.user != comment.created_by and request.user != task.assignee:
             raise PermissionDenied("You do not have permission to delete this comment.")

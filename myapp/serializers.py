@@ -37,6 +37,7 @@ class UserSerializer(serializers.ModelSerializer):
 
 class TaskSerializer(serializers.ModelSerializer):
     project_id = serializers.IntegerField(write_only=True)
+
     class Meta:
         model = Task
         fields = (
@@ -51,7 +52,7 @@ class TaskSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("assignee","created_at", "updated_at")
+        read_only_fields = ("assignee", "created_at", "updated_at")
         extra_kwargs = {
             "title": {
                 "validators": [
@@ -61,61 +62,67 @@ class TaskSerializer(serializers.ModelSerializer):
             }
         }
 
-
     def validate(self, data):
-        project_id = data.get('project_id')
+        project_id = data.get("project_id")
 
-        instance = getattr(self, 'instance', None)
+        instance = getattr(self, "instance", None)
         if instance:
             if project_id != instance.project.id:
                 raise serializers.ValidationError("Project ID cannot be changed.")
         else:
             if not project_id:
-                raise serializers.ValidationError({"project_id": "Project ID is required."})
+                raise serializers.ValidationError(
+                    {"project_id": "Project ID is required."}
+                )
 
-
-        due_date = data.get('due_date')
-        if due_date and (due_date < timezone.now().date() or 
-                        due_date > timezone.now().date().replace(year=timezone.now().year + 1)):
+        due_date = data.get("due_date")
+        if due_date and (
+            due_date < timezone.now().date()
+            or due_date > timezone.now().date().replace(year=timezone.now().year + 1)
+        ):
             raise serializers.ValidationError(
                 "Due date must be in the future and within one year from today."
             )
-        
-        assigned_to = data.get('assigned_to')
+
+        assigned_to = data.get("assigned_to")
         if not assigned_to:
-            raise serializers.ValidationError({"assigned_to": "At least one user must be assigned."})
-        
+            raise serializers.ValidationError(
+                {"assigned_to": "At least one user must be assigned."}
+            )
+
         user_ids = [user.id for user in assigned_to]
         existing_users = User.objects.filter(id__in=user_ids)
-        
+
         if len(existing_users) != len(assigned_to):
-            raise serializers.ValidationError({"assigned_to": "One or more invalid user IDs."})
-        
+            raise serializers.ValidationError(
+                {"assigned_to": "One or more invalid user IDs."}
+            )
+
         return data
-    
+
     def create(self, validated_data):
-        project_id = validated_data.pop('project_id')
+        project_id = validated_data.pop("project_id")
         project = Project.objects.get(pk=project_id)
-        
-        validated_data['project'] = project
-        validated_data['assignee'] = project.manager
-        
+
+        validated_data["project"] = project
+        validated_data["assignee"] = project.manager
+
         return super().create(validated_data)
-    
-    
+
 
 class ProjectSerializer(serializers.ModelSerializer):
     class Meta:
         model = Project
         fields = [
-            "id", "title", "description", "manager", 
-            "created_at", "updated_at", 
-            "project_members"
+            "id",
+            "title",
+            "description",
+            "manager",
+            "created_at",
+            "updated_at",
+            "project_members",
         ]
-        read_only_fields = [
-            "id", "manager", "created_at", 
-            "updated_at"
-        ]
+        read_only_fields = ["id", "manager", "created_at", "updated_at"]
 
     def validate(self, data):
         is_create = self.instance is None
@@ -123,25 +130,33 @@ class ProjectSerializer(serializers.ModelSerializer):
         if is_create:
             title = data.get("title", "").strip()
             if not title:
-                raise serializers.ValidationError({"title": "Title is required and cannot be empty."})
+                raise serializers.ValidationError(
+                    {"title": "Title is required and cannot be empty."}
+                )
 
             if len(title) < 3:
-                raise serializers.ValidationError({"title": "Title must be at least 3 characters long."})
+                raise serializers.ValidationError(
+                    {"title": "Title must be at least 3 characters long."}
+                )
 
             if len(title) > 100:
-                raise serializers.ValidationError({"title": "Title cannot exceed 100 characters."})
+                raise serializers.ValidationError(
+                    {"title": "Title cannot exceed 100 characters."}
+                )
 
         description = data.get("description", "")
         if description and len(description) > 1000:
-            raise serializers.ValidationError({"description": "Description cannot exceed 1000 characters."})
+            raise serializers.ValidationError(
+                {"description": "Description cannot exceed 1000 characters."}
+            )
 
         return data
-    
+
     def create(self, validated_data):
-        manager = self.context['request'].user
-        
-        validated_data['manager'] = manager
-        
+        manager = self.context["request"].user
+
+        validated_data["manager"] = manager
+
         return super().create(validated_data)
 
 
@@ -216,14 +231,13 @@ class DocumentSerializer(serializers.ModelSerializer):
         fields = ["id", "file", "uploaded_by", "uploaded_at"]
         read_only_fields = ["uploaded_by", "uploaded_at"]
 
-
     def create(self, validated_data):
-        task = self.context.get('task') 
+        task = self.context.get("task")
 
         if task is None:
-            raise serializers.ValidationError("Task is required.") 
+            raise serializers.ValidationError("Task is required.")
 
-        user = self.context["request"].user  
+        user = self.context["request"].user
         validated_data["task"] = task
         validated_data["uploaded_by"] = user
 
@@ -246,12 +260,12 @@ class CommentSerializer(serializers.ModelSerializer):
             )
 
         return data
-    
-    def create(self, validated_data):
-        request = self.context.get('request')
-        task = self.context.get('task')
 
-        validated_data['created_by'] = request.user
-        validated_data['task'] = task
-        
+    def create(self, validated_data):
+        request = self.context.get("request")
+        task = self.context.get("task")
+
+        validated_data["created_by"] = request.user
+        validated_data["task"] = task
+
         return super().create(validated_data)
