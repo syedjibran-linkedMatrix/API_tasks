@@ -11,12 +11,12 @@ class ProjectAdmin(admin.ModelAdmin):
 
 @admin.register(Task)
 class TaskAdmin(admin.ModelAdmin):
-    list_display = ('id', 'title')
+    list_display = ('id', 'title', 'project_id')
 
 @admin.register(Document)
 class DocumentAdmin(admin.ModelAdmin):
-    list_display = ('id', 'uploaded_by', 'task')
+    list_display = ('id', 'uploaded_by', 'task', 'task_id')
 
 @admin.register(Comment)
 class CommentAdmin(admin.ModelAdmin):
-    list_display = ('id', 'created_by')
+    list_display = ('id', 'created_by', 'task_id')

@@ -1,0 +1,113 @@
+# Introduction to Django
+
+## Part 1
+
+- Django Models
+- Fields
+- Properties of fields
+- Validations on fields + Custom Validators
+- ForeignKey, ManyToMany, OneToOne and their properties
+- Model Properties, static method, class method
+- Class Meta:
+- Dunder methods for Django models
+- Database Engine
+- Dbshell command in dajngo
+- Custom django field.
+- Just Register Models in Django admin
+
+## Part 2
+
+- Django admin
+- Django Admin (Registering Models in Django Admin).Re-arrange fields in Add/Edit Page, Custom List Display (Adding/Removing fields from list display)
+- Customizing Filters on the List Display (Search / Criteria), Customizing Search Filters
+- Django Actions in admin
+- Management commands
+- Django Templating
+- Template Inheritance.
+- Django Migrations
+    - Create custom migrations (Data Migrations)
+    - Unapply migrations
+    - Django migration table
+
+## Part 3
+
+- Django middleware + proxy models + Templates
+- What are Middleware
+- Create Custom Middleware to check something
+- Create template, base template
+- Create other templates and inherit from base template
+- Create custom tags in Django templates
+- Proxy Models
+- Migration —fake, —fake-inital
+- Generic Foreign Keys
+
+## Part 4
+
+Create Models
+
+Details: Ticket system like Github Issues, Youtrack, Jira, etc
+Models:
+
+1. User (1-1)
+2. Profile
+    - Profile Picture
+    - Role (choice => manager, QA, Developer, etc)
+    - contact_number
+3. Project
+    - title
+    - description
+    - start_date
+    - end_date
+    - team_members(many)
+4. Task
+    - title
+    - description
+    - status (open, Review, working, awaiting release, waitingg qa)
+    - project
+    - assignee
+    1. Document
+    - name
+    - description
+    - file
+    - version
+    - project (FK)
+5. Comment
+    - text
+    - author(user)
+    - created_at
+    - task
+    - project
+
+## Part 5
+
+- Django Queryset
+- Difference between Object and Queryset
+- Django Extensions Library (Django Shell plus)
+- Get
+- Filter (nested filter) (How to add and, or, not operation)
+- __in, __icontains __isNull, __lte, __gte
+- exist()
+- count()
+- Exclude
+- Aggregate
+- Annotate
+- Case When
+- select_related
+- prefetch_related
+- Update
+- Delete
+- Create
+- bulk_create
+- bulk_update
+- get_or_create
+- update_or_create
+- order_by
+- Union
+- Intersection
+- F, SUM, Q, COUNT
+
+## Part 6
+
+- Celery
+- Celery Task
+- Celery Beat

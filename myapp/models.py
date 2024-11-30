@@ -1,19 +1,45 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.conf import settings
+from enum import Enum, auto
+
+
+class UserRole(Enum):
+    PROJECT_MANAGER = auto()
+    DEVELOPER = auto()
+    SOFTWARE_QUALITY_ASSURANCE = auto()
+
+    def __str__(self):
+        return self.name.lower()
+
+    @classmethod
+    def choices(cls):
+        return [
+            (role.name.lower(), role.name.replace('_', ' ').title()) 
+            for role in cls
+        ]
+
+class TaskStatus(Enum):
+    TODO = auto()
+    IN_PROGRESS = auto()
+    COMPLETED = auto()
+
+    def __str__(self):
+        return self.name.lower()
+
+    @classmethod
+    def choices(cls):
+        return [
+            (role.name.lower(), role.name.replace('_', ' ').title()) 
+            for role in cls
+        ]
 
 class User(AbstractUser):
-    ROLE_CHOICES = [
-        ('project_manager', 'Project Manager'),
-        ('developer', 'Developer'),
-        ('sqa', 'Software Quality Assurance')
-    ]
-
     email = models.EmailField(unique=True)
     role = models.CharField(
-        max_length=20, 
-        choices=ROLE_CHOICES, 
-        default='developer'
+        max_length=50, 
+        choices=UserRole.choices(), 
+        default=UserRole.DEVELOPER.name.lower()
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -21,9 +47,10 @@ class User(AbstractUser):
     def __str__(self):
         return f"{self.username} - {self.get_role_display()}"
 
+
 class Project(models.Model):
-    title = models.CharField(max_length=200)
-    description = models.TextField()
+    title = models.CharField(max_length=200, null=True)
+    description = models.TextField(blank=True, null=True)
     manager = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -41,14 +68,8 @@ class Project(models.Model):
         return self.title
     
 class Task(models.Model):
-    STATUS_CHOICES = [
-        ('TODO', 'To Do'),
-        ('IN_PROGRESS', 'In Progress'),
-        ('COMPLETED', 'Completed')
-    ]
-
     title = models.CharField(max_length=200)
-    description = models.TextField()
+    description = models.TextField(blank=True, null=True)
     project = models.ForeignKey(
         Project,
         on_delete=models.CASCADE,
@@ -56,8 +77,8 @@ class Task(models.Model):
     )
     status = models.CharField(
         max_length=20,
-        choices=STATUS_CHOICES,
-        default='TODO'
+        choices=TaskStatus.choices(),
+        default=TaskStatus.TODO.name.lower()
     )
     assignee = models.ForeignKey(
         settings.AUTH_USER_MODEL,

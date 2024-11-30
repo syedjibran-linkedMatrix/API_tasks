@@ -37,18 +37,6 @@ class UserSerializer(serializers.ModelSerializer):
 
 class TaskSerializer(serializers.ModelSerializer):
     project_id = serializers.IntegerField(write_only=True)
-    description = serializers.CharField(
-        required=False,
-        allow_blank=True,
-        allow_null=True,
-        max_length=1000,
-        validators=[
-            MinLengthValidator(10, "Description must be at least 10 characters long."),
-            MaxLengthValidator(1000, "Description cannot exceed 1000 characters."),
-        ],
-    )
-    assignee = UserSerializer(read_only=True)
-
     class Meta:
         model = Task
         fields = (
@@ -63,7 +51,7 @@ class TaskSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("created_at", "updated_at")
+        read_only_fields = ("assignee","created_at", "updated_at")
         extra_kwargs = {
             "title": {
                 "validators": [
@@ -73,143 +61,88 @@ class TaskSerializer(serializers.ModelSerializer):
             }
         }
 
-    def validate_due_date(self, value):
-        if value and (value < timezone.now().date() or value > timezone.now().date().replace(year=timezone.now().year + 1)):
-            raise serializers.ValidationError(
-                "Due date must be in the future and within one year from today."
-            )
-        return value
 
     def validate(self, data):
         project_id = data.get('project_id')
-        if not project_id:
-            raise serializers.ValidationError({"project_id": "Project ID is required."})
 
-        try:
-            project = Project.objects.get(pk=project_id)
-        except Project.DoesNotExist:
-            raise serializers.ValidationError({"project_id": "Invalid Project ID"})
+        instance = getattr(self, 'instance', None)
+        if instance:
+            if project_id != instance.project.id:
+                raise serializers.ValidationError("Project ID cannot be changed.")
+        else:
+            if not project_id:
+                raise serializers.ValidationError({"project_id": "Project ID is required."})
 
-        request = self.context.get('request')
-        if project.manager != request.user:
-            raise serializers.ValidationError("Only project manager can create tasks.")
 
-        return data
-
-    def validate_assigned_to(self, value):
-        if not value:
-            raise serializers.ValidationError("At least one user must be assigned.")
+        due_date = data.get('due_date')
+        if due_date and (due_date < timezone.now().date() or 
+                        due_date > timezone.now().date().replace(year=timezone.now().year + 1)):
+            raise serializers.ValidationError(
+                "Due date must be in the future and within one year from today."
+            )
         
-        user_ids = [user.id for user in value]
+        assigned_to = data.get('assigned_to')
+        if not assigned_to:
+            raise serializers.ValidationError({"assigned_to": "At least one user must be assigned."})
+        
+        user_ids = [user.id for user in assigned_to]
         existing_users = User.objects.filter(id__in=user_ids)
         
-        if len(existing_users) != len(value):
-            raise serializers.ValidationError("One or more invalid user IDs.")
+        if len(existing_users) != len(assigned_to):
+            raise serializers.ValidationError({"assigned_to": "One or more invalid user IDs."})
         
-        return value
-
+        return data
+    
     def create(self, validated_data):
-        assigned_users = validated_data.pop('assigned_to')
-        task = Task.objects.create(**validated_data)
-        task.assigned_to.set(assigned_users)
-        return task
-
-    def update(self, instance, validated_data):
-        project_id = validated_data.get('project_id', None)
-        if project_id and project_id != instance.project.id:
-            raise serializers.ValidationError("Project ID cannot be changed.")
-
-        if "assigned_to" in validated_data:
-            assigned_to_data = validated_data.pop("assigned_to", [])
-            assigned_users = self.validate_assigned_to(assigned_to_data)
-            instance.assigned_to.set(assigned_users)
-
-        return super().update(instance, validated_data)
-
-
+        project_id = validated_data.pop('project_id')
+        project = Project.objects.get(pk=project_id)
+        
+        validated_data['project'] = project
+        validated_data['assignee'] = project.manager
+        
+        return super().create(validated_data)
+    
+    
 
 class ProjectSerializer(serializers.ModelSerializer):
-    title = serializers.CharField(
-        required=True,
-        validators=[
-            MinLengthValidator(3, message="Title must be at least 3 characters long."),
-            MaxLengthValidator(100, message="Title cannot exceed 100 characters."),
-        ],
-    )
-    description = serializers.CharField(
-        required=False,
-        allow_blank=True,
-        allow_null=True,
-        validators=[
-            MaxLengthValidator(
-                1000, message="Description cannot exceed 1000 characters."
-            )
-        ],
-    )
-
-    total_members = serializers.SerializerMethodField(read_only=True)
-
-    project_members = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.all(), many=True, required=False, allow_empty=True
-    )
-
     class Meta:
         model = Project
         fields = [
-            "id",
-            "title",
-            "description",
-            "manager",
-            "created_at",
-            "updated_at",
-            "project_members",
-            "total_members",
+            "id", "title", "description", "manager", 
+            "created_at", "updated_at", 
+            "project_members"
         ]
         read_only_fields = [
-            "id",
-            "manager",
-            "created_at",
-            "updated_at",
-            "total_members",
+            "id", "manager", "created_at", 
+            "updated_at"
         ]
 
-    def get_total_members(self, obj):
-        return obj.project_members.count()
-
     def validate(self, data):
+        is_create = self.instance is None
 
-        if "title" in data and not data["title"].strip():
-            raise serializers.ValidationError(
-                {"title": "Title cannot be empty or just whitespace."}
-            )
+        if is_create:
+            title = data.get("title", "").strip()
+            if not title:
+                raise serializers.ValidationError({"title": "Title is required and cannot be empty."})
 
-        if "project_members" in data:
-            members = data["project_members"]
-            if len(set(members)) != len(members):
-                raise serializers.ValidationError(
-                    {"project_members": "Duplicate members are not allowed."}
-                )
+            if len(title) < 3:
+                raise serializers.ValidationError({"title": "Title must be at least 3 characters long."})
+
+            if len(title) > 100:
+                raise serializers.ValidationError({"title": "Title cannot exceed 100 characters."})
+
+        description = data.get("description", "")
+        if description and len(description) > 1000:
+            raise serializers.ValidationError({"description": "Description cannot exceed 1000 characters."})
 
         return data
-
+    
     def create(self, validated_data):
-        project_members = validated_data("project_members", [])
-
-        project = Project.objects.create(**validated_data)
-
-        if project_members:
-            project.project_members.add(*project_members)
-
-        return project
-
-    def update(self, instance, validated_data):
-        if "project_members" in validated_data:
-            members = validated_data.pop("project_members")
-            instance.project_members.clear()
-            if members:
-                instance.project_members.add(*members)
-
-        return super().update(instance, validated_data)
+        manager = self.context['request'].user
+        
+        validated_data['manager'] = manager
+        
+        return super().create(validated_data)
 
 
 class AddMembersSerializer(serializers.Serializer):
@@ -283,28 +216,42 @@ class DocumentSerializer(serializers.ModelSerializer):
         fields = ["id", "file", "uploaded_by", "uploaded_at"]
         read_only_fields = ["uploaded_by", "uploaded_at"]
 
-    def save(self, **kwargs):
-        kwargs["task"] = self.context["task"]
-        return super().save(**kwargs)
+
+    def create(self, validated_data):
+        task = self.context.get('task') 
+
+        if task is None:
+            raise serializers.ValidationError("Task is required.") 
+
+        user = self.context["request"].user  
+        validated_data["task"] = task
+        validated_data["uploaded_by"] = user
+
+        return super().create(validated_data)
 
 
 class CommentSerializer(serializers.ModelSerializer):
-    created_by = serializers.StringRelatedField(read_only=True)
-    task = serializers.PrimaryKeyRelatedField(
-        queryset=Task.objects.all(), required=False
-    )
 
     class Meta:
         model = Comment
         fields = ["id", "content", "task", "created_by", "created_at", "updated_at"]
-        read_only_fields = ["id", "created_by", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_by", "created_at", "updated_at", "task"]
 
-    def create(self, validated_data):
-        content = validated_data.get("content", "").strip()
+    def validate(self, data):
+        content = data.get("content", "").strip()
 
         if not content:
             raise serializers.ValidationError(
                 {"content": "Content field cannot be empty."}
             )
 
+        return data
+    
+    def create(self, validated_data):
+        request = self.context.get('request')
+        task = self.context.get('task')
+
+        validated_data['created_by'] = request.user
+        validated_data['task'] = task
+        
         return super().create(validated_data)
