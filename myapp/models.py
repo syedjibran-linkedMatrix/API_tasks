@@ -68,7 +68,7 @@ class Project(models.Model):
         return self.title
     
 class Task(models.Model):
-    title = models.CharField(max_length=200)
+    title = models.CharField(max_length=200, null = True, blank=True)
     description = models.TextField(blank=True, null=True)
     project = models.ForeignKey(
         Project,

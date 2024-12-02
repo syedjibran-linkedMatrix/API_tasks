@@ -176,6 +176,11 @@ class TaskViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         project_id = request.data.get("project_id")
 
+        if not project_id:
+                raise PermissionDenied(
+                    {"project_id": "Project ID is required."}
+                )
+
         try:
             project = Project.objects.get(pk=project_id)
         except Project.DoesNotExist:
@@ -198,9 +203,7 @@ class TaskViewSet(viewsets.ModelViewSet):
         if task.project.manager != request.user:
             raise PermissionDenied("Only the project manager can update this task.")
 
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
+        
         return super().update(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):
