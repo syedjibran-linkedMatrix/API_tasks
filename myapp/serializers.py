@@ -274,16 +274,14 @@ class DocumentSerializer(serializers.ModelSerializer):
         read_only_fields = ["uploaded_by", "uploaded_at"]
 
     def create(self, validated_data):
-        task = self.context.get("task")
+        task = self.context.get('task')
+        user = self.context['request'].user
 
-        if task is None:
-            raise serializers.ValidationError("Task is required.")
-
-        user = self.context["request"].user
-        validated_data["task"] = task
-        validated_data["uploaded_by"] = user
+        validated_data['task'] = task
+        validated_data['uploaded_by'] = user
 
         return super().create(validated_data)
+
 
 
 class CommentSerializer(serializers.ModelSerializer):

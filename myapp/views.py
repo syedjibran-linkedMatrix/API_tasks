@@ -73,8 +73,9 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return self.queryset.filter(
-            Q(project_members=self.request.user) | Q(manager=self.request.user)
+            Q(project_members=self.request.user) | Q(manager=self.request.user) 
         ).distinct()
+    
 
     def create(self, request, *args, **kwargs):
         if request.user.role != "project_manager":
@@ -114,7 +115,6 @@ class ProjectViewSet(viewsets.ModelViewSet):
             status=status.HTTP_204_NO_CONTENT,
         )
 
-    # http://localhost:8000/api/projects/1/add_members/
     @action(detail=True, methods=["post"])
     def add_members(self, request, pk=None):
         project = self.get_object()
@@ -138,7 +138,6 @@ class ProjectViewSet(viewsets.ModelViewSet):
             {"detail": "Members added successfully"}, status=status.HTTP_200_OK
         )
 
-    # http://localhost:8000/api/projects/12/remove_members/
     @action(detail=True, methods=["post"])
     def remove_members(self, request, pk=None):
         project = self.get_object()
@@ -229,14 +228,15 @@ class TaskViewSet(viewsets.ModelViewSet):
             )
 
         serializer = DocumentSerializer(
-            data={**request.data, "task": task.id, "uploaded_by": request.user.id}
+            data=request.data, 
+            context={'request': request, 'task': task} 
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-    # http://localhost:8000/api/tasks/8/documents/
+
     @action(detail=True, methods=["get"])
     def documents(self, request, pk=None):
 
@@ -255,7 +255,6 @@ class TaskViewSet(viewsets.ModelViewSet):
 
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-    # http://localhost:8000/api/tasks/8/documents/1/
     @action(
         detail=True,
         url_path="documents/(?P<document_id>[^/.]+)",
