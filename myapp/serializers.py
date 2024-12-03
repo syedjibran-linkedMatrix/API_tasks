@@ -1,9 +1,8 @@
-from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Project, Task, Document, Comment
-from django.core.validators import MinLengthValidator, MaxLengthValidator
 from django.utils import timezone
+from rest_framework import serializers
 
+from .models import Comment, Document, Project, Task
 
 User = get_user_model()
 
@@ -36,7 +35,7 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class TaskSerializer(serializers.ModelSerializer):
-    project_id = serializers.IntegerField(write_only=True)
+    project_id = serializers.IntegerField(write_only=True, required=False)
 
     class Meta:
         model = Task
@@ -53,85 +52,70 @@ class TaskSerializer(serializers.ModelSerializer):
             "updated_at",
         )
         read_only_fields = ("assignee", "created_at", "updated_at")
-        extra_kwargs = {
-            "title": {
-                "validators": [
-                    MinLengthValidator(3, "Title must be at least 3 characters long."),
-                    MaxLengthValidator(100, "Title cannot exceed 100 characters."),
-                ]
-            }
-        }
-
-class TaskSerializer(serializers.ModelSerializer):
-    project_id = serializers.IntegerField(write_only=True, required=False)
-
-    class Meta:
-        model = Task
-        fields = (
-            "id", "title", "description", "project_id", "status", 
-            "assignee", "assigned_to", "due_date", 
-            "created_at", "updated_at",
-        )
-        read_only_fields = ("assignee", "created_at", "updated_at")
 
     def validate_title(self, value):
         if not value:
             raise serializers.ValidationError("Title cannot be empty")
-        
+
         words = value.split()
         if not (3 <= len(words) <= 100):
             raise serializers.ValidationError("Title must be between 3 and 100 words.")
-        
+
         return value
 
     def validate_assigned_to(self, value):
         if not value:
             raise serializers.ValidationError("At least one user must be assigned")
-        
+
         user_ids = [user.id for user in value]
         existing_users = User.objects.filter(id__in=user_ids)
 
         if len(existing_users) != len(value):
             raise serializers.ValidationError("One or more invalid user IDs.")
-        
+
         return value
 
     def validate_due_date(self, value):
         if value:
             today = timezone.now().date()
             if not (today <= value <= today.replace(year=today.year + 1)):
-                raise serializers.ValidationError("Due date must be between today and one year from now.")
+                raise serializers.ValidationError(
+                    "Due date must be between today and one year from now."
+                )
         return value
 
     def validate(self, data):
-        is_create = not bool(getattr(self, 'instance', None))
-        
+        is_create = not bool(getattr(self, "instance", None))
+
         validation_methods = {
-            'title': self.validate_title,
-            'due_date': self.validate_due_date
+            "title": self.validate_title,
+            "due_date": self.validate_due_date,
         }
 
         if is_create:
-            if not data.get('title'):
+            if not data.get("title"):
                 raise serializers.ValidationError({"title": "Title is required for task creation."})
-            
-            if not data.get('project_id'):
-                raise serializers.ValidationError({"project_id": "Project ID is required for task creation."})
-            
-            if not data.get('assigned_to'):
-                raise serializers.ValidationError({"assigned_to": "Assigned users are required for task creation."})
-            
-            validation_methods.update({
-                'project_id': lambda x: x,
-                'assigned_to': self.validate_assigned_to
-            })
+
+            if not data.get("project_id"):
+                raise serializers.ValidationError(
+                    {"project_id": "Project ID is required for task creation."}
+                )
+
+            if not data.get("assigned_to"):
+                raise serializers.ValidationError(
+                    {"assigned_to": "Assigned users are required for task creation."}
+                )
+
+            validation_methods.update(
+                {"project_id": lambda x: x, "assigned_to": self.validate_assigned_to}
+            )
         else:
-            if 'project_id' in data and data['project_id'] != self.instance.project_id:
-                raise serializers.ValidationError({"project_id": "Project ID cannot be changed after creation."})
-            
-            validation_methods.update({
-                'assigned_to': self.validate_assigned_to
-            })
+            if "project_id" in data and data["project_id"] != self.instance.project_id:
+                raise serializers.ValidationError(
+                    {"project_id": "Project ID cannot be changed after creation."}
+                )
+
+            validation_methods.update({"assigned_to": self.validate_assigned_to})
 
         for field, validator in validation_methods.items():
             if field in data:
@@ -143,13 +127,9 @@ class TaskSerializer(serializers.ModelSerializer):
         project_id = validated_data.pop("project_id")
         project = Project.objects.get(pk=project_id)
 
-        validated_data.update({
-            "project": project,
-            "assignee": project.manager
-        })
+        validated_data.update({"project": project, "assignee": project.manager})
 
         return super().create(validated_data)
-
 
 
 class ProjectSerializer(serializers.ModelSerializer):
@@ -182,9 +162,7 @@ class ProjectSerializer(serializers.ModelSerializer):
                 )
 
             if len(title) > 100:
-                raise serializers.ValidationError(
-                    {"title": "Title cannot exceed 100 characters."}
-                )
+                raise serializers.ValidationError({"title": "Title cannot exceed 100 characters."})
 
         description = data.get("description", "")
         if description and len(description) > 1000:
@@ -224,9 +202,7 @@ class AddMembersSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {
                     "detail": "Some users are already members of this project",
-                    "existing_member_ids": list(
-                        existing_members.values_list("id", flat=True)
-                    ),
+                    "existing_member_ids": list(existing_members.values_list("id", flat=True)),
                 }
             )
 
@@ -258,9 +234,7 @@ class RemoveMembersSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {
                     "detail": "Some users are not members of this project",
-                    "non_project_member_ids": list(
-                        non_members.values_list("id", flat=True)
-                    ),
+                    "non_project_member_ids": list(non_members.values_list("id", flat=True)),
                 }
             )
 
@@ -274,18 +248,16 @@ class DocumentSerializer(serializers.ModelSerializer):
         read_only_fields = ["uploaded_by", "uploaded_at"]
 
     def create(self, validated_data):
-        task = self.context.get('task')
-        user = self.context['request'].user
+        task = self.context.get("task")
+        user = self.context["request"].user
 
-        validated_data['task'] = task
-        validated_data['uploaded_by'] = user
+        validated_data["task"] = task
+        validated_data["uploaded_by"] = user
 
         return super().create(validated_data)
 
 
-
 class CommentSerializer(serializers.ModelSerializer):
-
     class Meta:
         model = Comment
         fields = ["id", "content", "task", "created_by", "created_at", "updated_at"]
@@ -295,9 +267,7 @@ class CommentSerializer(serializers.ModelSerializer):
         content = data.get("content", "").strip()
 
         if not content:
-            raise serializers.ValidationError(
-                {"content": "Content field cannot be empty."}
-            )
+            raise serializers.ValidationError({"content": "Content field cannot be empty."})
 
         return data
 

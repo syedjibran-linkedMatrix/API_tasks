@@ -1,26 +1,23 @@
-from rest_framework import viewsets, status, permissions
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.response import Response
-from rest_framework.authtoken.models import Token
-from django.contrib.auth import authenticate
-from .models import Project, Task, Document, Comment
-from rest_framework.decorators import action
-from rest_framework.response import Response
-from .serializers import (
-    ProjectSerializer,
-    TaskSerializer,
-    DocumentSerializer,
-    UserRegistrationSerializer,
-    UserLoginSerializer,
-    RemoveMembersSerializer,
-    AddMembersSerializer,
-    CommentSerializer,
-)
-from rest_framework.exceptions import PermissionDenied
-from django.contrib.auth import get_user_model
+from django.contrib.auth import authenticate, get_user_model
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
+from rest_framework import permissions, status, viewsets
+from rest_framework.authtoken.models import Token
+from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.response import Response
 
+from .models import Comment, Document, Project, Task
+from .serializers import (
+    AddMembersSerializer,
+    CommentSerializer,
+    DocumentSerializer,
+    ProjectSerializer,
+    RemoveMembersSerializer,
+    TaskSerializer,
+    UserLoginSerializer,
+    UserRegistrationSerializer,
+)
 
 User = get_user_model()
 
@@ -50,12 +47,8 @@ def login_user(request):
 
         if user:
             token, _ = Token.objects.get_or_create(user=user)
-            return Response(
-                {"token": token.key, "user_id": user.id, "username": user.username}
-            )
-        return Response(
-            {"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED
-        )
+            return Response({"token": token.key, "user_id": user.id, "username": user.username})
+        return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -73,9 +66,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return self.queryset.filter(
-            Q(project_members=self.request.user) | Q(manager=self.request.user) 
+            Q(project_members=self.request.user) | Q(manager=self.request.user)
         ).distinct()
-    
 
     def create(self, request, *args, **kwargs):
         if request.user.role != "project_manager":
@@ -91,9 +83,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
         project = self.get_object()
         if project.manager != request.user and not request.user.is_staff:
             return Response(
-                {
-                    "detail": "Only the project manager or an admin can update this project."
-                },
+                {"detail": "Only the project manager or an admin can update this project."},
                 status=status.HTTP_403_FORBIDDEN,
             )
         return super().update(request, *args, **kwargs)
@@ -103,9 +93,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
         if project.manager != request.user and not request.user.is_staff:
             return Response(
-                {
-                    "detail": "Only the project manager or an admin can delete this project."
-                },
+                {"detail": "Only the project manager or an admin can delete this project."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -125,18 +113,14 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        serializer = AddMembersSerializer(
-            data=request.data, context={"project": project}
-        )
+        serializer = AddMembersSerializer(data=request.data, context={"project": project})
         serializer.is_valid(raise_exception=True)
 
         user_ids = serializer.validated_data["user_ids"]
         users_to_add = User.objects.filter(id__in=user_ids)
         project.project_members.add(*users_to_add)
 
-        return Response(
-            {"detail": "Members added successfully"}, status=status.HTTP_200_OK
-        )
+        return Response({"detail": "Members added successfully"}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"])
     def remove_members(self, request, pk=None):
@@ -148,18 +132,14 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        serializer = RemoveMembersSerializer(
-            data=request.data, context={"project": project}
-        )
+        serializer = RemoveMembersSerializer(data=request.data, context={"project": project})
         serializer.is_valid(raise_exception=True)
 
         user_ids = serializer.validated_data["user_ids"]
         users_to_remove = User.objects.filter(id__in=user_ids)
         project.project_members.remove(*users_to_remove)
 
-        return Response(
-            {"detail": "Members removed successfully"}, status=status.HTTP_200_OK
-        )
+        return Response({"detail": "Members removed successfully"}, status=status.HTTP_200_OK)
 
 
 class TaskViewSet(viewsets.ModelViewSet):
@@ -176,9 +156,7 @@ class TaskViewSet(viewsets.ModelViewSet):
         project_id = request.data.get("project_id")
 
         if not project_id:
-                raise PermissionDenied(
-                    {"project_id": "Project ID is required."}
-                )
+            raise PermissionDenied({"project_id": "Project ID is required."})
 
         try:
             project = Project.objects.get(pk=project_id)
@@ -202,7 +180,6 @@ class TaskViewSet(viewsets.ModelViewSet):
         if task.project.manager != request.user:
             raise PermissionDenied("Only the project manager can update this task.")
 
-        
         return super().update(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):
@@ -212,41 +189,32 @@ class TaskViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Only the project manager can delete this task.")
 
         self.perform_destroy(task)
-        return Response(
-            {"detail": "Task deleted successfully."}, status=status.HTTP_204_NO_CONTENT
-        )
+        return Response({"detail": "Task deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["post"])
     def upload_document(self, request, pk=None):
         task = get_object_or_404(Task, pk=pk)
         if request.user != task.assignee and request.user not in task.assigned_to.all():
             return Response(
-                {
-                    "detail": "You do not have permission to upload documents for this task."
-                },
+                {"detail": "You do not have permission to upload documents for this task."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
         serializer = DocumentSerializer(
-            data=request.data, 
-            context={'request': request, 'task': task} 
+            data=request.data, context={"request": request, "task": task}
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-
     @action(detail=True, methods=["get"])
     def documents(self, request, pk=None):
-
         task = get_object_or_404(Task, pk=pk)
 
         if request.user != task.assignee and request.user not in task.assigned_to.all():
             return Response(
-                {
-                    "detail": "You do not have permission to view documents for this task."
-                },
+                {"detail": "You do not have permission to view documents for this task."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -261,14 +229,11 @@ class TaskViewSet(viewsets.ModelViewSet):
         methods=["delete"],
     )
     def delete_document(self, request, pk=None, document_id=None):
-
         task = get_object_or_404(Task, pk=pk)
         document = get_object_or_404(Document, pk=document_id, task=task)
 
         if request.user != document.uploaded_by and request.user != task.assignee:
-            raise PermissionDenied(
-                "You do not have permission to delete this document."
-            )
+            raise PermissionDenied("You do not have permission to delete this document.")
 
         document.delete()
         return Response(
@@ -298,7 +263,6 @@ class TaskViewSet(viewsets.ModelViewSet):
     # http://localhost:8000/api/tasks/8/comments/
     @action(detail=True, methods=["get"])
     def comments(self, request, pk=None):
-
         task = get_object_or_404(Task, pk=pk)
 
         if request.user != task.assignee and request.user not in task.assigned_to.all():
@@ -318,7 +282,6 @@ class TaskViewSet(viewsets.ModelViewSet):
         methods=["delete"],
     )
     def delete_comment(self, request, pk=None, comment_id=None):
-
         task = get_object_or_404(Task, pk=pk)
         comment = get_object_or_404(Comment, pk=comment_id, task=task)
 
