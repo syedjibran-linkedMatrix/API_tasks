@@ -1,0 +1,124 @@
+Project Management Application
+Overview
+A Django-based project management application that supports user authentication, project creation, task management, document uploads, and commenting functionality.
+Features
+
+User Authentication
+
+Registration
+Login/Logout
+Role-based access control
+
+
+Project Management
+
+Create, update, and delete projects
+Add/remove project members
+Project-level permissions
+
+
+Task Management
+
+Create tasks within projects
+Assign tasks to multiple users
+Track task status and due dates
+Permission-based task interactions
+
+
+Document Management
+
+Upload documents to tasks
+View and delete task-specific documents
+
+
+Commenting System
+
+Add comments to tasks
+Delete own comments or comments on managed tasks
+
+
+
+Tech Stack
+
+Backend: Django
+API Framework: Django REST Framework
+Authentication: Token-based authentication
+Database: Not specified (defaults to SQLite)
+
+User Roles
+
+Project Manager: Can create projects, manage members, create/update tasks
+Developer: Can be assigned to tasks, upload documents, add comments
+Software Quality Assurance: Similar permissions to Developer
+
+Installation
+Prerequisites
+
+Python 3.8+
+pip
+virtualenv (recommended)
+
+Setup Steps
+
+Clone the repository
+Create a virtual environment
+bashCopypython -m venv venv
+source venv/bin/activate  # On Windows use `venv\Scripts\activate`
+
+Install dependencies
+bashCopypip install -r requirements.txt
+
+Run migrations
+bashCopypython manage.py makemigrations
+python manage.py migrate
+
+Create superuser
+bashCopypython manage.py createsuperuser
+
+Run development server
+bashCopypython manage.py runserver
+
+
+API Endpoints
+Authentication
+
+POST /api/register/: User registration
+POST /api/login/: User login
+POST /api/logout/: User logout
+
+Projects
+
+GET /api/projects/: List projects
+POST /api/projects/: Create project
+PUT /api/projects/{id}/: Update project
+DELETE /api/projects/{id}/: Delete project
+POST /api/projects/{id}/add_members/: Add project members
+POST /api/projects/{id}/remove_members/: Remove project members
+
+Tasks
+
+GET /api/tasks/: List tasks
+POST /api/tasks/: Create task
+PUT /api/tasks/{id}/: Update task
+DELETE /api/tasks/{id}/: Delete task
+POST /api/tasks/{id}/upload_document/: Upload document
+GET /api/tasks/{id}/documents/: List task documents
+POST /api/tasks/{id}/add_comment/: Add comment
+GET /api/tasks/{id}/comments/: List task comments
+
+Permissions
+
+Only project managers can create projects
+Only project managers can add/remove project members
+Only project managers can create/update/delete tasks
+Users can only view and interact with tasks they're assigned to or manage
+
+Testing
+(Placeholder for future test instructions)
+Contributing
+
+Fork the repository
+Create a feature branch
+Commit changes
+Push to the branch
+Create a pull request

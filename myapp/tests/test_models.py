@@ -139,9 +139,13 @@ class TestDocumentModel:
 
         task = Task.objects.create(title="Test Task", project=project)
 
-        test_file = SimpleUploadedFile(name="test_document.txt", content=b"Test file content")
+        test_file = SimpleUploadedFile(
+            name="test_document.txt", content=b"Test file content"
+        )
 
-        document = Document.objects.create(file=test_file, uploaded_by=manager, task=task)
+        document = Document.objects.create(
+            file=test_file, uploaded_by=manager, task=task
+        )
 
         assert document.uploaded_by == manager
         assert document.task == task
