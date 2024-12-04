@@ -15,7 +15,9 @@ class UserRole(Enum):
 
     @classmethod
     def choices(cls):
-        return [(role.name.lower(), role.name.replace("_", " ").title()) for role in cls]
+        return [
+            (role.name.lower(), role.name.replace("_", " ").title()) for role in cls
+        ]
 
 
 class TaskStatus(Enum):
@@ -28,7 +30,9 @@ class TaskStatus(Enum):
 
     @classmethod
     def choices(cls):
-        return [(role.name.lower(), role.name.replace("_", " ").title()) for role in cls]
+        return [
+            (role.name.lower(), role.name.replace("_", " ").title()) for role in cls
+        ]
 
 
 class User(AbstractUser):
