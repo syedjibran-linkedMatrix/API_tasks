@@ -19,6 +19,7 @@ from .serializers import (
     UserRegistrationSerializer,
 )
 
+# comment
 User = get_user_model()
 
 
