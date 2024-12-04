@@ -19,9 +19,11 @@ from .serializers import (
     UserRegistrationSerializer,
 )
 
+# comment
 User = get_user_model()
 
 
+# comment
 @api_view(["POST"])
 @permission_classes([permissions.AllowAny])
 def register_user(request):
