@@ -9,3 +9,4 @@ pytest==8.3.4
 sqlparse==0.5.2
 tomli==2.2.1
 typing_extensions==4.12.2
+celery>=5.0.0
