@@ -125,7 +125,10 @@ class TaskSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         project_id = validated_data.pop("project_id")
-        project = Project.objects.get(pk=project_id)
+        try:
+            project = Project.objects.get(pk=project_id)
+        except Project.DoesNotExist:
+            raise serializers.ValidationError({"project_id": "Invalid project ID"})
 
         validated_data.update({"project": project, "assignee": project.manager})
 
@@ -248,7 +251,7 @@ class DocumentSerializer(serializers.ModelSerializer):
         read_only_fields = ["uploaded_by", "uploaded_at"]
 
     def create(self, validated_data):
-        task = self.context.get("task")
+        task = self.context["task"]
         user = self.context["request"].user
 
         validated_data["task"] = task
