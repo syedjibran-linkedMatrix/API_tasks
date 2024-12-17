@@ -152,3 +152,10 @@ CELERY_TIMEZONE = 'UTC'
 
 # docker-compose down --volumes --remove-orphans
 
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'mailhog'  
+EMAIL_PORT = 1025
+EMAIL_USE_TLS = False
+EMAIL_USE_SSL = False
+DEFAULT_FROM_EMAIL = 'noreply@example.com'
